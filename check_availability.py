@@ -13,7 +13,7 @@ from pathlib import Path
 
 COMPANY = "faoschwarz"
 ITEM = "592655"
-DATES = ["2026-09-25", "2026-09-26", "2026-09-27"]
+DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
