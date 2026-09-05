@@ -22,14 +22,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python gh_action/check_availability.py
+        run: python check_availability.py
 
       - name: Commit updated seen-slots state
         run: |
           git config user.name "jellycat-monitor-bot"
           git config user.email "actions@users.noreply.github.com"
-          if ! git diff --quiet -- gh_action/seen_open_slots.json; then
-            git add gh_action/seen_open_slots.json
+          if ! git diff --quiet -- seen_open_slots.json; then
+            git add seen_open_slots.json
             git commit -m "Update seen open slots"
             git push
           fi
