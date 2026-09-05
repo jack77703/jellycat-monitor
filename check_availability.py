@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Poll FareHarbor for Jellycat Diner Experience openings and alert via Telegram.
 
-State (which slots we've already alerted on) is persisted in seen_open_slots.json,
-which the GitHub Actions workflow restores/saves via actions/cache between runs.
+Runs as one long GitHub Actions job (see .github/workflows/monitor.yml) that loops
+internally every LOOP_INTERVAL_SECONDS for up to LOOP_DURATION_SECONDS, so the actual
+check cadence isn't limited by GitHub's 5-minute cron floor. State (which slots we've
+already alerted on) lives in seen_open_slots.json; whenever it changes, this script
+commits and pushes it itself so state survives even if the job is killed mid-run.
 """
 import json
 import os
+import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -14,6 +19,9 @@ from pathlib import Path
 COMPANY = "faoschwarz"
 ITEM = "592655"
 DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]
+
+LOOP_INTERVAL_SECONDS = 120
+LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -65,15 +73,33 @@ def save_seen(seen: set) -> None:
     SEEN_PATH.write_text(json.dumps(sorted(seen)))
 
 
-def main() -> int:
+def commit_and_push_seen() -> None:
+    """Best-effort commit of the updated state file so it survives a mid-run kill."""
+    try:
+        subprocess.run(["git", "add", str(SEEN_PATH)], cwd=BASE_DIR, check=True)
+        diff = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=BASE_DIR
+        )
+        if diff.returncode == 0:
+            return  # nothing changed
+        subprocess.run(
+            ["git", "commit", "-m", "Update seen open slots"], cwd=BASE_DIR, check=True
+        )
+        subprocess.run(["git", "push"], cwd=BASE_DIR, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"WARNING: failed to commit/push seen state: {e}", file=sys.stderr)
+
+
+def run_check_cycle(dates=None) -> bool:
+    """Check given dates (default DATES). Returns True if any new open slot was found."""
+    dates = dates or DATES
     seen = load_seen()
-    had_error = False
-    for date in DATES:
+    found_new = False
+    for date in dates:
         try:
             open_slots = find_open_slots(date)
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
             print(f"ERROR checking {date}: {e}", file=sys.stderr)
-            had_error = True
             continue
 
         if not open_slots:
@@ -91,12 +117,28 @@ def main() -> int:
             )
             send_telegram(msg)
             print(f"Sent Telegram alert for {date}")
+            found_new = True
         for s in new_slots:
             seen.add(str(s[0]))
 
     save_seen(seen)
-    return 1 if had_error else 0
+    return found_new
+
+
+def loop() -> None:
+    start = time.monotonic()
+    n = 0
+    while time.monotonic() - start < LOOP_DURATION_SECONDS:
+        n += 1
+        print(f"--- check #{n} ---")
+        if run_check_cycle():
+            commit_and_push_seen()
+        time.sleep(LOOP_INTERVAL_SECONDS)
+    print(f"Loop finished after {n} checks.")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if len(sys.argv) > 1 and sys.argv[1] == "--once":
+        run_check_cycle()
+    else:
+        loop()

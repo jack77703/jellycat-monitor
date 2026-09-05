@@ -1,16 +1,24 @@
 name: Jellycat Diner availability monitor
 
+# Scheduled triggers only start a new job every ~5h (comfortably above GitHub's
+# 5-min cron floor and after the previous job's ~4h55m internal loop exits).
+# The real 2-minute check cadence happens *inside* check_availability.py's loop().
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 */5 * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: jellycat-monitor
+  cancel-in-progress: false
+
 jobs:
-  check:
+  monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -18,18 +26,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check availability
+      - name: Configure git identity for self-committing state
+        run: |
+          git config user.name "jellycat-monitor-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Run monitor loop (checks every 2 minutes for ~4h55m)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python check_availability.py
-
-      - name: Commit updated seen-slots state
-        run: |
-          git config user.name "jellycat-monitor-bot"
-          git config user.email "actions@users.noreply.github.com"
-          if ! git diff --quiet -- seen_open_slots.json; then
-            git add seen_open_slots.json
-            git commit -m "Update seen open slots"
-            git push
-          fi
