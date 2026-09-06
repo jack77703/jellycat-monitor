@@ -14,7 +14,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 COMPANY = "faoschwarz"
 ITEM = "592655"
@@ -23,11 +25,18 @@ DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]
 LOOP_INTERVAL_SECONDS = 120
 LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
 
+# One heartbeat per calendar day (local to HEARTBEAT_TZ), only if a check cycle
+# happens to run during this window, so you're never pinged overnight.
+HEARTBEAT_TZ = ZoneInfo("America/New_York")
+HEARTBEAT_START_HOUR = 10  # 10am
+HEARTBEAT_END_HOUR = 1  # 1am (wraps past midnight)
+
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_PATH = BASE_DIR / "seen_open_slots.json"
+HEARTBEAT_STATE_PATH = BASE_DIR / "last_heartbeat.json"
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) jellycat-monitor/1.0"
 
@@ -78,21 +87,47 @@ def save_seen(seen: set) -> None:
     SEEN_PATH.write_text(json.dumps(sorted(seen)))
 
 
-def commit_and_push_seen() -> None:
-    """Best-effort commit of the updated state file so it survives a mid-run kill."""
+def commit_and_push(paths: list, message: str) -> None:
+    """Best-effort commit of the given state files so they survive a mid-run kill."""
     try:
-        subprocess.run(["git", "add", str(SEEN_PATH)], cwd=BASE_DIR, check=True)
-        diff = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"], cwd=BASE_DIR
-        )
+        subprocess.run(["git", "add", *[str(p) for p in paths]], cwd=BASE_DIR, check=True)
+        diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=BASE_DIR)
         if diff.returncode == 0:
             return  # nothing changed
-        subprocess.run(
-            ["git", "commit", "-m", "Update seen open slots"], cwd=BASE_DIR, check=True
-        )
+        subprocess.run(["git", "commit", "-m", message], cwd=BASE_DIR, check=True)
         subprocess.run(["git", "push"], cwd=BASE_DIR, check=True)
     except subprocess.CalledProcessError as e:
-        log(f"WARNING: failed to commit/push seen state: {e}", file=sys.stderr)
+        log(f"WARNING: failed to commit/push state: {e}", file=sys.stderr)
+
+
+def _in_heartbeat_window(now: datetime) -> bool:
+    hour = now.hour
+    if HEARTBEAT_START_HOUR <= HEARTBEAT_END_HOUR:
+        return HEARTBEAT_START_HOUR <= hour < HEARTBEAT_END_HOUR
+    return hour >= HEARTBEAT_START_HOUR or hour < HEARTBEAT_END_HOUR
+
+
+def maybe_send_heartbeat() -> None:
+    """Send at most one heartbeat per local day, only during the allowed window."""
+    now = datetime.now(HEARTBEAT_TZ)
+    if not _in_heartbeat_window(now):
+        return
+
+    today = now.date().isoformat()
+    last = None
+    if HEARTBEAT_STATE_PATH.exists():
+        last = json.loads(HEARTBEAT_STATE_PATH.read_text()).get("date")
+    if last == today:
+        return
+
+    dates_str = ", ".join(DATES)
+    send_telegram(
+        f"Jellycat monitor heartbeat: still running, watching {dates_str}. "
+        f"No open slots yet."
+    )
+    log("Sent daily heartbeat")
+    HEARTBEAT_STATE_PATH.write_text(json.dumps({"date": today}))
+    commit_and_push([HEARTBEAT_STATE_PATH], "Update heartbeat state")
 
 
 def run_check_cycle(dates=None) -> bool:
@@ -137,7 +172,8 @@ def loop() -> None:
         n += 1
         log(f"--- check #{n} ---")
         if run_check_cycle():
-            commit_and_push_seen()
+            commit_and_push([SEEN_PATH], "Update seen open slots")
+        maybe_send_heartbeat()
         time.sleep(LOOP_INTERVAL_SECONDS)
     log(f"Loop finished after {n} checks.")
 
