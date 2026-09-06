@@ -24,8 +24,7 @@ LOOP_INTERVAL_SECONDS = 120
 LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
 
 # Heartbeat runs 24/7 since it's silent (disable_notification) - no need for
-# quiet hours. Sent at most once per HEARTBEAT_INTERVAL_SECONDS.
-HEARTBEAT_INTERVAL_SECONDS = 3600  # hourly
+# quiet hours. One per wall-clock hour, see maybe_send_heartbeat().
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -112,12 +111,14 @@ def compact_dates(dates: list) -> str:
 
 
 def maybe_send_heartbeat() -> None:
-    """Send at most one silent heartbeat per HEARTBEAT_INTERVAL_SECONDS, 24/7."""
-    now = time.time()
+    """Send one silent heartbeat per wall-clock hour (fires on the first check
+    after each hour boundary - within ~2 min of :00, since that's the check
+    cadence - rather than drifting based on when the loop happened to start."""
+    hour_key = time.strftime("%Y-%m-%d %H", time.gmtime())
     last = None
     if HEARTBEAT_STATE_PATH.exists():
-        last = json.loads(HEARTBEAT_STATE_PATH.read_text()).get("last_sent")
-    if last is not None and now - last < HEARTBEAT_INTERVAL_SECONDS:
+        last = json.loads(HEARTBEAT_STATE_PATH.read_text()).get("hour")
+    if last == hour_key:
         return
 
     send_telegram(
@@ -125,7 +126,7 @@ def maybe_send_heartbeat() -> None:
         silent=True,
     )
     log("Sent heartbeat")
-    HEARTBEAT_STATE_PATH.write_text(json.dumps({"last_sent": now}))
+    HEARTBEAT_STATE_PATH.write_text(json.dumps({"hour": hour_key}))
     commit_and_push([HEARTBEAT_STATE_PATH], "Update heartbeat state")
 
 
