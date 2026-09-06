@@ -98,6 +98,19 @@ def commit_and_push(paths: list, message: str) -> None:
         log(f"WARNING: failed to commit/push state: {e}", file=sys.stderr)
 
 
+def compact_dates(dates: list) -> str:
+    """['2026-09-24', '2026-09-25', '2026-09-26'] -> '9/24,25,26'"""
+    groups = []
+    for d in dates:
+        year, month, day = d.split("-")
+        month, day = int(month), int(day)
+        if groups and groups[-1][0] == month:
+            groups[-1][1].append(day)
+        else:
+            groups.append((month, [day]))
+    return "; ".join(f"{m}/" + ",".join(str(d) for d in days) for m, days in groups)
+
+
 def maybe_send_heartbeat() -> None:
     """Send at most one silent heartbeat per HEARTBEAT_INTERVAL_SECONDS, 24/7."""
     now = time.time()
@@ -107,10 +120,8 @@ def maybe_send_heartbeat() -> None:
     if last is not None and now - last < HEARTBEAT_INTERVAL_SECONDS:
         return
 
-    dates_str = ", ".join(DATES)
     send_telegram(
-        f"Jellycat monitor heartbeat: still running, watching {dates_str}. "
-        f"No open slots yet.",
+        f"Still running, watching {compact_dates(DATES)}.",
         silent=True,
     )
     log("Sent heartbeat")
