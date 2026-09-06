@@ -14,9 +14,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 COMPANY = "faoschwarz"
 ITEM = "592655"
@@ -25,11 +23,9 @@ DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]
 LOOP_INTERVAL_SECONDS = 120
 LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
 
-# One heartbeat per calendar day (local to HEARTBEAT_TZ), only if a check cycle
-# happens to run during this window, so you're never pinged overnight.
-HEARTBEAT_TZ = ZoneInfo("America/New_York")
-HEARTBEAT_START_HOUR = 10  # 10am
-HEARTBEAT_END_HOUR = 1  # 1am (wraps past midnight)
+# Heartbeat runs 24/7 since it's silent (disable_notification) - no need for
+# quiet hours. Sent at most once per HEARTBEAT_INTERVAL_SECONDS.
+HEARTBEAT_INTERVAL_SECONDS = 3600  # hourly
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -102,24 +98,13 @@ def commit_and_push(paths: list, message: str) -> None:
         log(f"WARNING: failed to commit/push state: {e}", file=sys.stderr)
 
 
-def _in_heartbeat_window(now: datetime) -> bool:
-    hour = now.hour
-    if HEARTBEAT_START_HOUR <= HEARTBEAT_END_HOUR:
-        return HEARTBEAT_START_HOUR <= hour < HEARTBEAT_END_HOUR
-    return hour >= HEARTBEAT_START_HOUR or hour < HEARTBEAT_END_HOUR
-
-
 def maybe_send_heartbeat() -> None:
-    """Send at most one heartbeat per local day, only during the allowed window."""
-    now = datetime.now(HEARTBEAT_TZ)
-    if not _in_heartbeat_window(now):
-        return
-
-    today = now.date().isoformat()
+    """Send at most one silent heartbeat per HEARTBEAT_INTERVAL_SECONDS, 24/7."""
+    now = time.time()
     last = None
     if HEARTBEAT_STATE_PATH.exists():
-        last = json.loads(HEARTBEAT_STATE_PATH.read_text()).get("date")
-    if last == today:
+        last = json.loads(HEARTBEAT_STATE_PATH.read_text()).get("last_sent")
+    if last is not None and now - last < HEARTBEAT_INTERVAL_SECONDS:
         return
 
     dates_str = ", ".join(DATES)
@@ -128,8 +113,8 @@ def maybe_send_heartbeat() -> None:
         f"No open slots yet.",
         silent=True,
     )
-    log("Sent daily heartbeat")
-    HEARTBEAT_STATE_PATH.write_text(json.dumps({"date": today}))
+    log("Sent heartbeat")
+    HEARTBEAT_STATE_PATH.write_text(json.dumps({"last_sent": now}))
     commit_and_push([HEARTBEAT_STATE_PATH], "Update heartbeat state")
 
 
