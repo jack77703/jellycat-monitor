@@ -1,8 +1,11 @@
 name: Jellycat Diner availability monitor
 
-# Scheduled triggers only start a new job every ~5h (comfortably above GitHub's
-# 5-min cron floor and after the previous job's ~4h55m internal loop exits).
-# The real 2-minute check cadence happens *inside* check_availability.py's loop().
+# Each job runs a ~4h55m internal loop (2-min check cadence, see loop() in
+# check_availability.py) and, right before it ends, re-triggers this workflow
+# itself so the next job starts within seconds - not at the next fixed cron
+# slot, which could otherwise leave a multi-hour monitoring gap. The cron
+# schedule below is only a safety net in case a self-trigger ever fails to
+# fire (e.g. a transient API error).
 on:
   schedule:
     - cron: "0 */5 * * *"
@@ -10,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: jellycat-monitor
@@ -37,3 +41,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PYTHONUNBUFFERED: "1"
         run: python check_availability.py
+
+      - name: Trigger next run immediately (closes the cron-grid gap)
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run monitor.yml
