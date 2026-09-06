@@ -53,12 +53,17 @@ def fetch_availabilities(date: str) -> list:
 
 
 def find_open_slots(date: str) -> list:
+    """A slot only counts as truly open if it's flagged bookable AND has
+    actual capacity - FareHarbor has a transient race where is_bookable/
+    is_sold_out briefly disagree with approximate_available_capacity==0
+    (seen live: a slot reported bookable+not-sold-out with cap 0, then
+    reverted to sold-out on the next check). Treat cap==0 as not open;
+    treat a missing/None capacity as unknown and trust the flags."""
     open_slots = []
     for slot in fetch_availabilities(date):
-        if slot.get("is_bookable") and not slot.get("is_sold_out"):
-            open_slots.append(
-                (slot["pk"], slot["start_at"], slot.get("approximate_available_capacity"))
-            )
+        cap = slot.get("approximate_available_capacity")
+        if slot.get("is_bookable") and not slot.get("is_sold_out") and cap != 0:
+            open_slots.append((slot["pk"], slot["start_at"], cap))
     return open_slots
 
 
