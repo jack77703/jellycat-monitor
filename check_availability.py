@@ -32,6 +32,11 @@ SEEN_PATH = BASE_DIR / "seen_open_slots.json"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) jellycat-monitor/1.0"
 
 
+def log(msg: str, file=None) -> None:
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    print(f"[{ts} UTC] {msg}", file=file or sys.stdout)
+
+
 def fetch_availabilities(date: str) -> list:
     url = (
         f"https://fareharbor.com/api/v1/companies/{COMPANY}/items/{ITEM}"
@@ -87,7 +92,7 @@ def commit_and_push_seen() -> None:
         )
         subprocess.run(["git", "push"], cwd=BASE_DIR, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"WARNING: failed to commit/push seen state: {e}", file=sys.stderr)
+        log(f"WARNING: failed to commit/push seen state: {e}", file=sys.stderr)
 
 
 def run_check_cycle(dates=None) -> bool:
@@ -99,15 +104,15 @@ def run_check_cycle(dates=None) -> bool:
         try:
             open_slots = find_open_slots(date)
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
-            print(f"ERROR checking {date}: {e}", file=sys.stderr)
+            log(f"ERROR checking {date}: {e}", file=sys.stderr)
             continue
 
         if not open_slots:
-            print(f"{date}: fully booked")
+            log(f"{date}: fully booked")
             continue
 
         new_slots = [s for s in open_slots if str(s[0]) not in seen]
-        print(f"{date}: {len(open_slots)} open slot(s), {len(new_slots)} new")
+        log(f"{date}: {len(open_slots)} open slot(s), {len(new_slots)} new")
         if new_slots:
             lines = [f"  {s[1]} (cap {s[2]})" for s in new_slots]
             msg = (
@@ -116,7 +121,7 @@ def run_check_cycle(dates=None) -> bool:
                 + "\nBook now: https://faoschwarz.com/pages/reservations"
             )
             send_telegram(msg)
-            print(f"Sent Telegram alert for {date}")
+            log(f"Sent Telegram alert for {date}")
             found_new = True
         for s in new_slots:
             seen.add(str(s[0]))
@@ -130,11 +135,11 @@ def loop() -> None:
     n = 0
     while time.monotonic() - start < LOOP_DURATION_SECONDS:
         n += 1
-        print(f"--- check #{n} ---")
+        log(f"--- check #{n} ---")
         if run_check_cycle():
             commit_and_push_seen()
         time.sleep(LOOP_INTERVAL_SECONDS)
-    print(f"Loop finished after {n} checks.")
+    log(f"Loop finished after {n} checks.")
 
 
 if __name__ == "__main__":
