@@ -67,9 +67,11 @@ def find_open_slots(date: str) -> list:
     return open_slots
 
 
-def send_telegram(text: str) -> None:
+def send_telegram(text: str, silent: bool = False) -> None:
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = json.dumps({"chat_id": CHAT_ID, "text": text}).encode()
+    data = json.dumps(
+        {"chat_id": CHAT_ID, "text": text, "disable_notification": silent}
+    ).encode()
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
@@ -123,7 +125,8 @@ def maybe_send_heartbeat() -> None:
     dates_str = ", ".join(DATES)
     send_telegram(
         f"Jellycat monitor heartbeat: still running, watching {dates_str}. "
-        f"No open slots yet."
+        f"No open slots yet.",
+        silent=True,
     )
     log("Sent daily heartbeat")
     HEARTBEAT_STATE_PATH.write_text(json.dumps({"date": today}))
