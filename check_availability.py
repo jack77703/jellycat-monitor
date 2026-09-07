@@ -18,7 +18,10 @@ from pathlib import Path
 
 COMPANY = "faoschwarz"
 ITEM = "592655"
-DATES = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]
+DATES = [
+    "2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23",
+    "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27",
+]
 
 LOOP_INTERVAL_SECONDS = 120
 LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
