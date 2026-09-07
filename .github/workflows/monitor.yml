@@ -1,6 +1,6 @@
 name: Jellycat Diner availability monitor
 
-# Each job runs a ~4h55m internal loop (2-min check cadence, see loop() in
+# Each job runs a ~4h55m internal loop (30-sec check cadence, see loop() in
 # check_availability.py) and, right before it ends, re-triggers this workflow
 # itself so the next job starts within seconds - not at the next fixed cron
 # slot, which could otherwise leave a multi-hour monitoring gap. The cron
@@ -35,7 +35,7 @@ jobs:
           git config user.name "jellycat-monitor-bot"
           git config user.email "actions@users.noreply.github.com"
 
-      - name: Run monitor loop (checks every 2 minutes for ~4h55m)
+      - name: Run monitor loop (checks every 30 seconds for ~4h55m)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

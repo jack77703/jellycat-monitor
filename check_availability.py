@@ -23,7 +23,7 @@ DATES = [
     "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27",
 ]
 
-LOOP_INTERVAL_SECONDS = 120
+LOOP_INTERVAL_SECONDS = 30
 LOOP_DURATION_SECONDS = 295 * 60  # leaves headroom under GitHub's 6h job limit
 
 # Heartbeat runs 24/7 since it's silent (disable_notification) - no need for
@@ -120,7 +120,7 @@ def compact_dates(dates: list) -> str:
 
 def maybe_send_heartbeat() -> None:
     """Send one silent heartbeat per wall-clock hour (fires on the first check
-    after each hour boundary - within ~2 min of :00, since that's the check
+    after each hour boundary - within LOOP_INTERVAL_SECONDS of :00, since that's the check
     cadence - rather than drifting based on when the loop happened to start."""
     hour_key = time.strftime("%Y-%m-%d %H", time.gmtime())
     last = None
